@@ -2,6 +2,7 @@ package br.com.brandelero.caixax.data
 
 import android.content.Context
 import android.content.Intent
+import android.database.sqlite.SQLiteDatabase
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -28,6 +29,7 @@ import java.util.concurrent.TimeUnit
 object Drive {
     private const val API = "https://www.googleapis.com/drive/v3"
     private const val UPLOAD = "https://www.googleapis.com/upload/drive/v3"
+    private const val KEEP = 5
     private val SQLITE_HEADER = "SQLite format 3".toByteArray()
 
     val authRequest: AuthorizationRequest = AuthorizationRequest.builder()
@@ -40,7 +42,7 @@ object Drive {
         return if (r.hasResolution()) null else r.accessToken
     }
 
-    private fun backupIds(token: String): List<String> {
+    fun backupIds(token: String): List<String> {
         val q = URLEncoder.encode("name='${CaixaDb.NAME}'", "UTF-8")
         val json = JSONObject(httpGet("$API/files?spaces=appDataFolder&q=$q&orderBy=modifiedTime%20desc&fields=files(id)", token))
         val files = json.getJSONArray("files")
@@ -49,7 +51,9 @@ object Drive {
 
     suspend fun upload(app: App, token: String) = withContext(Dispatchers.IO) {
         // Junta o WAL ao arquivo principal para o backup ficar completo
-        app.db.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL)").use { it.moveToFirst() }
+        app.db.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL)").use {
+            check(it.moveToFirst() && it.getInt(0) == 0) { "Banco ocupado, tento de novo depois" }
+        }
         val bytes = app.getDatabasePath(CaixaDb.NAME).readBytes()
         val old = backupIds(token)
         val boundary = "caixax-" + UUID.randomUUID()
@@ -58,8 +62,8 @@ object Drive {
             "--$boundary\r\nContent-Type: application/octet-stream\r\n\r\n").toByteArray() +
             bytes + "\r\n--$boundary--\r\n".toByteArray()
         request("$UPLOAD/files?uploadType=multipart", "POST", token, "multipart/related; boundary=$boundary", body)
-        // Só apaga as cópias antigas depois que a nova subiu
-        old.forEach { request("$API/files/$it", "DELETE", token) }
+        // Mantém as KEEP cópias mais recentes; só apaga depois que a nova subiu
+        old.drop(KEEP - 1).forEach { request("$API/files/$it", "DELETE", token) }
     }
 
     /** Baixa o backup mais recente para um arquivo temporário; null se não houver backup. */
@@ -76,6 +80,10 @@ object Drive {
         }
         val header = ByteArray(SQLITE_HEADER.size).also { b -> tmp.inputStream().use { it.read(b) } }
         check(header.contentEquals(SQLITE_HEADER)) { "Arquivo de backup inválido" }
+        // Arquivo truncado passaria no cabeçalho; confere a integridade antes de substituir o banco
+        SQLiteDatabase.openDatabase(tmp.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+            db.rawQuery("PRAGMA quick_check", null).use { check(it.moveToFirst() && it.getString(0) == "ok") { "Backup corrompido" } }
+        }
         tmp
     }
 
@@ -83,6 +91,7 @@ object Drive {
     fun replaceDatabaseAndRestart(app: App, file: File) {
         app.db.close()
         val path = app.getDatabasePath(CaixaDb.NAME)
+        path.copyTo(File(path.path + ".bak"), overwrite = true) // cópia do banco atual, caso algo dê errado
         file.copyTo(path, overwrite = true)
         File(path.path + "-wal").delete()
         File(path.path + "-shm").delete()
@@ -96,6 +105,8 @@ object Drive {
     private fun request(url: String, method: String, token: String, type: String? = null, body: ByteArray? = null) {
         val c = URL(url).openConnection() as HttpURLConnection
         try {
+            c.connectTimeout = 15_000
+            c.readTimeout = 60_000
             c.requestMethod = method
             c.setRequestProperty("Authorization", "Bearer $token")
             if (body != null) {

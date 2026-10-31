@@ -26,7 +26,8 @@ class RulesTest {
 
     @Test fun esteEProximosMantemNumeracao() {
         val (before, after) = Rule(jan, 10).splitAt(jan + 3)
-        assertEquals(Rule(jan, 3, 0, true), before)
+        assertEquals(Rule(jan, 3, 0, 10), before)
+        assertEquals("2/10", before!!.label(jan + 1))
         assertEquals("4/10", after.label(jan + 3))
         assertEquals("10/10", after.label(jan + 9))
         assertFalse(after.activeIn(jan + 10))
@@ -53,6 +54,8 @@ class RulesTest {
         assertEquals(123456L, parseCents("1.234,56"))
         assertEquals(1250L, parseCents("12,5"))
         assertEquals(1200L, parseCents("12"))
+        assertEquals(150000L, parseCents("1.500"))
+        assertEquals(150L, parseCents("1.5"))
         assertEquals(1999L, parseCents("R$ 19,99"))
         assertNull(parseCents("abc"))
         assertNull(parseCents("-3"))

@@ -34,8 +34,6 @@ android {
     buildFeatures { compose = true }
 }
 
-ksp { arg("room.schemaLocation", "$projectDir/schemas") }
-
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
@@ -52,6 +50,9 @@ dependencies {
     ksp("androidx.room:room-compiler:$room")
 
     implementation("androidx.biometric:biometric:1.1.0")
+    // Biometric traz fragment 1.2.x, que quebra o launcher de consentimento do Google
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
+    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")

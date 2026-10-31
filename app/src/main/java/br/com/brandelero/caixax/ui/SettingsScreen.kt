@@ -58,7 +58,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import br.com.brandelero.caixax.data.Category
 import br.com.brandelero.caixax.data.Drive
 import com.google.android.gms.auth.api.identity.Identity
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.tasks.await
 import java.time.Instant
 import java.time.ZoneId
@@ -154,7 +156,10 @@ fun SettingsScreen() {
                     if (!prefs.drive) Button(
                         onClick = {
                             withDrive { token ->
-                                backupNow(token)
+                                // Aparelho novo ou reinstalado: não sobrescreve um backup existente antes de restaurar
+                                val existing = withContext(Dispatchers.IO) { Drive.backupIds(token) }.isNotEmpty()
+                                if (existing) snack.showSnackbar("Já existe backup no Drive. Use Restaurar para trazê-lo ou Backup agora para substituir.")
+                                else backupNow(token)
                                 prefs.drive = true
                                 Drive.schedule(app)
                             }

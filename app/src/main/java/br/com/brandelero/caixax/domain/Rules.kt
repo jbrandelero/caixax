@@ -16,13 +16,12 @@ enum class Scope { THIS, FOLLOWING, ALL }
  * Regra de um lançamento.
  * count: 1 = único, N = N meses, null = indefinido.
  * offset: meses que ficaram numa regra anterior após "este e próximos" (mantém o rótulo "4/10").
- * series: nasceu com prazo definido (> 1 mês) e por isso mostra rótulo "n/total".
+ * total: tamanho da série para o rótulo "n/total" (null = sem rótulo: único ou indefinido).
  */
-data class Rule(val start: Int, val count: Int?, val offset: Int = 0, val series: Boolean = count != null && count > 1) {
+data class Rule(val start: Int, val count: Int?, val offset: Int = 0, val total: Int? = count?.takeIf { it > 1 }) {
     fun activeIn(m: Int) = m >= start && (count == null || m < start + count)
 
-    fun label(m: Int): String? =
-        if (!series || count == null) null else "${m - start + 1 + offset}/${count + offset}"
+    fun label(m: Int): String? = total?.let { "${m - start + 1 + offset}/$it" }
 
     /** Meses anteriores a [current] em que a regra esteve ativa (para achar pendências em atraso). */
     fun monthsBefore(current: Int): IntRange =
@@ -32,14 +31,20 @@ data class Rule(val start: Int, val count: Int?, val offset: Int = 0, val series
     fun splitAt(m: Int): Pair<Rule?, Rule> {
         require(activeIn(m)) { "mês $m fora da regra" }
         val before = if (m == start) null else copy(count = m - start)
-        return before to Rule(m, count?.let { start + it - m }, offset + m - start, series)
+        return before to Rule(m, count?.let { start + it - m }, offset + m - start, total)
     }
 }
 
-/** "1.234,56", "12,5", "12" -> centavos. Vazio, inválido ou negativo -> null. */
+private val THOUSANDS = Regex("""^\d{1,3}(\.\d{3})+$""")
+
+/** "1.234,56", "1.500", "12,5", "12" -> centavos. Vazio, inválido ou negativo -> null. */
 fun parseCents(s: String): Long? {
     val t = s.trim().removePrefix("R$").trim()
-    val normalized = if (t.contains(',')) t.replace(".", "").replace(',', '.') else t
+    val normalized = when {
+        t.contains(',') -> t.replace(".", "").replace(',', '.')
+        THOUSANDS.matches(t) -> t.replace(".", "")
+        else -> t
+    }
     return normalized.toBigDecimalOrNull()
         ?.takeIf { it.signum() >= 0 }
         ?.setScale(2, RoundingMode.HALF_UP)

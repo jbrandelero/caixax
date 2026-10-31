@@ -86,7 +86,7 @@ fun EntrySheet(line: Line?, month: Int, cats: List<Category>, onDismiss: () -> U
         val form = Entry(
             id = e?.id ?: 0, description = desc.trim(), cents = cents!!, income = income, categoryId = catId!!,
             start = e?.start ?: month, count = count, offset = e?.offset ?: 0,
-            series = count != null && count > 1, dueDay = dueDay,
+            total = count?.takeIf { it > 1 }, dueDay = dueDay,
         )
         if (e == null || line == null) {
             scope.launch { app.repo.create(form, paid); onDismiss() }
@@ -99,15 +99,20 @@ fun EntrySheet(line: Line?, month: Int, cats: List<Category>, onDismiss: () -> U
             scope.launch { app.repo.setPaid(e.id, line.ym, paid); onDismiss() }
             return
         }
-        // Mudou a recorrência: vale para a série toda e recomeça a numeração
-        val new = if (recurrenceChanged) form.copy(offset = 0) else form.copy(series = e.series)
+        // Mudou a recorrência: recomeça a numeração a partir deste mês (ou da série toda, se for o 1º mês)
+        val new = if (recurrenceChanged) form.copy(offset = 0) else form.copy(total = e.total)
         val run = { s: Scope -> scope.launch { app.repo.edit(e, new, line.ym, s, paid); onDismiss() }; Unit }
-        if (e.count == 1 || recurrenceChanged) run(Scope.ALL)
-        else dialog = "Aplicar alteração a" to listOf(
-            "Só este mês" to { run(Scope.THIS) },
-            "Este e os próximos" to { run(Scope.FOLLOWING) },
-            "Todos os meses" to { run(Scope.ALL) },
-        )
+        // "Só este mês" guarda apenas valor e descrição; tipo, categoria e vencimento valem para a série
+        val onlyValues = form.income == e.income && form.categoryId == e.categoryId && form.dueDay == e.dueDay
+        when {
+            e.count == 1 -> run(Scope.ALL)
+            recurrenceChanged -> run(if (line.ym == e.start) Scope.ALL else Scope.FOLLOWING)
+            else -> dialog = "Aplicar alteração a" to listOfNotNull(
+                ("Só este mês" to { run(Scope.THIS) }).takeIf { onlyValues },
+                "Este e os próximos" to { run(Scope.FOLLOWING) },
+                "Todos os meses" to { run(Scope.ALL) },
+            )
+        }
     }
 
     fun delete() {

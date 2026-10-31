@@ -78,7 +78,10 @@ class Repo(private val db: CaixaDb) {
             scope == Scope.FOLLOWING && m != old.start -> {
                 val (before, after) = old.rule().splitAt(m)
                 dao.updateEntry(old.copy(count = before!!.count))
-                val id = dao.insertEntry(new.copy(id = 0, start = after.start, count = after.count, offset = after.offset, series = after.series))
+                // Recorrência alterada no formulário: a nova série começa em m com a contagem informada
+                val next = if (new.count != old.count) new.copy(id = 0, start = m, offset = 0)
+                else new.copy(id = 0, start = after.start, count = after.count, offset = after.offset, total = after.total)
+                val id = dao.insertEntry(next)
                 dao.moveOccs(old.id, id, m)
                 id
             }

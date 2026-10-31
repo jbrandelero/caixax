@@ -37,11 +37,11 @@ data class Entry(
     val start: Int,
     val count: Int?,
     val offset: Int = 0,
-    val series: Boolean,
+    val total: Int?,
     val dueDay: Int?,
 )
 
-fun Entry.rule() = Rule(start, count, offset, series)
+fun Entry.rule() = Rule(start, count, offset, total)
 
 /** Estado de uma ocorrência (entrada x mês): pago, excluído ou valor alterado só nesse mês. */
 @Entity(
@@ -114,7 +114,7 @@ interface CaixaDao {
     @Upsert suspend fun saveQuotes(q: List<Quote>)
 }
 
-@Database(entities = [Category::class, Entry::class, Occ::class, Place::class, Movement::class, Quote::class], version = 1)
+@Database(entities = [Category::class, Entry::class, Occ::class, Place::class, Movement::class, Quote::class], version = 1, exportSchema = false)
 abstract class CaixaDb : RoomDatabase() {
     abstract fun dao(): CaixaDao
 
